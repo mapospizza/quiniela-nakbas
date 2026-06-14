@@ -322,7 +322,7 @@ const PLAYERS=[
   {name:"Mapo",  key:"mapo",  color:"#2563EB", teams:["Francia","Austria","Noruega","DR Congo","Paraguay","Túnez","Bosnia"]},
   {name:"Popa",  key:"popa",  color:"#059669", teams:["Argentina","Bélgica","Turquía","Sudáfrica","Nueva Zelanda","Alemania","Panamá"]},
   {name:"Cachi", key:"cachi", color:"#16a34a", teams:["Portugal","Colombia","Argelia","Arabia Saudita","Haití","Marruecos","Senegal"]},
-  {name:"Gurri", key:"gurri", color:"#0891B2", teams:["Países Bajos","Japón","Costa de Marfil","Irán","Cabo Verde","Canadá"]},
+  {name:"Gurri", key:"gurri", color:"#0891B2", teams:["Francia","Países Bajos","Japón","Costa de Marfil","Irán","Cabo Verde","Canadá"]},
   {name:"Nukis", key:"nukis", color:"#DB2777", teams:["Brasil","Australia","Corea del Sur","Escocia","Estados Unidos","Chequia","Irak"]},
   {name:"Nico",  key:"nico",  color:"#D97706", teams:["España","Croacia","Ghana","Qatar","Uzbekistán","México","Curazao"]},
 ];
@@ -413,15 +413,20 @@ function norm(s){
   return al[k]||k;
 }
 
-function findPlayer(team){
-  if(!team)return null;
+function findPlayers(team){
+  if(!team)return[];
   const key=norm(team);
+  const found=[];
   for(const p of PLAYERS)for(const t of p.teams){
     const tn=norm(t);
-    if(tn===key||tn.includes(key)||key.includes(tn))return p;
+    if(tn===key||tn.includes(key)||key.includes(tn)){
+      if(!found.find(x=>x.name===p.name))found.push(p);
+    }
   }
-  return null;
+  return found;
 }
+// Alias singular para compatibilidad (retorna el primero o null)
+function findPlayer(team){const r=findPlayers(team);return r[0]||null;}
 
 function playerBadge(player){
   if(!player)return `<span class="own-badge own-none">—</span>`;
@@ -431,10 +436,18 @@ function playerBadge(player){
 function computeStats(){
   const st={};PLAYERS.forEach(p=>st[p.name]={w:0,d:0,l:0,pts:0});
   state.matches.forEach(m=>{
-    const{pa,pb,sa,sb}=m;
-    if(sa>sb){if(pa){st[pa].w++;st[pa].pts+=3;}if(pb)st[pb].l++;}
-    else if(sb>sa){if(pb){st[pb].w++;st[pb].pts+=3;}if(pa)st[pa].l++;}
-    else{if(pa){st[pa].d++;st[pa].pts+=1;}if(pb){st[pb].d++;st[pb].pts+=1;}}
+    const pas=Array.isArray(m.pa)?m.pa:(m.pa?[m.pa]:[]);
+    const pbs=Array.isArray(m.pb)?m.pb:(m.pb?[m.pb]:[]);
+    if(m.sa>m.sb){
+      pas.forEach(n=>{if(st[n]){st[n].w++;st[n].pts+=3;}});
+      pbs.forEach(n=>{if(st[n])st[n].l++;});
+    }else if(m.sb>m.sa){
+      pbs.forEach(n=>{if(st[n]){st[n].w++;st[n].pts+=3;}});
+      pas.forEach(n=>{if(st[n])st[n].l++;});
+    }else{
+      pas.forEach(n=>{if(st[n]){st[n].d++;st[n].pts+=1;}});
+      pbs.forEach(n=>{if(st[n]){st[n].d++;st[n].pts+=1;}});
+    }
   });
   return st;
 }
@@ -547,11 +560,12 @@ async function registerMatch(){
   const sa=parseInt(document.getElementById("score-a").value)||0;
   const sb=parseInt(document.getElementById("score-b").value)||0;
   if(!ta||!tb){alert("Escribe los dos equipos.");return;}
-  const pa=findPlayer(ta),pb=findPlayer(tb);
-  if(!pa&&!pb){alert("No encontré ninguno de los dos equipos.\nVerifica el nombre.");return;}
-  const payload={action:"addMatch",ta,tb,sa,sb,pa:pa?.name||null,pb:pb?.name||null,ts:Date.now()};
+  const pas=findPlayers(ta),pbs=findPlayers(tb);
+  if(!pas.length&&!pbs.length){alert("No encontré ninguno de los dos equipos.\nVerifica el nombre.");return;}
+  const paNames=pas.map(p=>p.name);
+  const pbNames=pbs.map(p=>p.name);
+  const payload={action:"addMatch",ta,tb,sa,sb,pa:paNames.length===1?paNames[0]:(paNames.length>1?paNames:null),pb:pbNames.length===1?pbNames[0]:(pbNames.length>1?pbNames:null),ts:Date.now()};
 
-  // Reflejo inmediato local mientras se sincroniza
   state.matches.push(payload);
   document.getElementById("team-a").value="";
   document.getElementById("team-b").value="";
@@ -601,10 +615,11 @@ function updatePreview(){
   const ta=document.getElementById("team-a").value.trim();
   const tb=document.getElementById("team-b").value.trim();
   const prev=document.getElementById("preview");
-  const pa=ta?findPlayer(ta):null,pb=tb?findPlayer(tb):null;
+  const pas=ta?findPlayers(ta):[];
+  const pbs=tb?findPlayers(tb):[];
   const parts=[];
-  if(ta)parts.push(`${ta} → ${pa?pa.name:"sin dueño"}`);
-  if(tb)parts.push(`${tb} → ${pb?pb.name:"sin dueño"}`);
+  if(ta)parts.push(`${ta} → ${pas.length?pas.map(p=>p.name).join(" & "):"sin dueño"}`);
+  if(tb)parts.push(`${tb} → ${pbs.length?pbs.map(p=>p.name).join(" & "):"sin dueño"}`);
   if(parts.length){prev.textContent=parts.join("   ·   ");prev.classList.add("show");}
   else prev.classList.remove("show");
 }
@@ -647,13 +662,14 @@ function renderCalendar(){
     html+=`<div class="day-group"><div class="day-label">${DAYS[dt.getDay()]} ${d} ${MONTHS[mo-1]}</div>`;
     byDate[date].forEach(m=>{
       const reg=getRegisteredResult(m.ta,m.tb);
-      const pa=findPlayer(m.ta),pb=findPlayer(m.tb);
+      const pas=findPlayers(m.ta),pbs=findPlayers(m.tb);
+      const hasQ=pas.length||pbs.length;
       const cardCls=`match-card${reg?" has-result":""}`;
-      const borderColor=pa?pa.color:(pb?pb.color:"transparent");
+      const borderColor=pas.length?pas[0].color:(pbs.length?pbs[0].color:"transparent");
       const sA=reg?reg.sa:"·",sB=reg?reg.sb:"·";
       const sc=reg?"mc-score":"mc-score pending";
-      const owA=pa?`<span class="own-badge badge-${pa.key}">${pa.name}</span>`:`<span style="display:none"></span>`;
-      const owB=pb?`<span class="own-badge badge-${pb.key}">${pb.name}</span>`:`<span style="display:none"></span>`;
+      const owA=pas.length?pas.map(p=>`<span class="own-badge badge-${p.key}">${p.name}</span>`).join(""):`<span style="display:none"></span>`;
+      const owB=pbs.length?pbs.map(p=>`<span class="own-badge badge-${p.key}">${p.name}</span>`).join(""):`<span style="display:none"></span>`;
       html+=`<div class="${cardCls}" style="border-left-color:${borderColor}">
         <div class="mc-team right">${m.ta}</div>
         <div class="${sc}">${sA}</div><div class="mc-vs">vs</div><div class="${sc}">${sB}</div>
