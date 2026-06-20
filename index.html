@@ -338,7 +338,11 @@ async function fetchData(){
   try{
     const res=await fetch(API_URL,{cache:"no-store"});
     const data=await res.json();
-    state.matches=data.matches||[];
+    state.matches=(data.matches||[]).map(m=>({
+      ...m,
+      pa:m.pa?String(m.pa).split("|").filter(Boolean):[],
+      pb:m.pb?String(m.pb).split("|").filter(Boolean):[]
+    }));
     state.champs=data.champs||{};
     PLAYERS.forEach(p=>{if(!(p.name in state.champs))state.champs[p.name]="";});
     renderAll();
@@ -564,9 +568,10 @@ async function registerMatch(){
   if(!pas.length&&!pbs.length){alert("No encontré ninguno de los dos equipos.\nVerifica el nombre.");return;}
   const paNames=pas.map(p=>p.name);
   const pbNames=pbs.map(p=>p.name);
-  const payload={action:"addMatch",ta,tb,sa,sb,pa:paNames.length===1?paNames[0]:(paNames.length>1?paNames:null),pb:pbNames.length===1?pbNames[0]:(pbNames.length>1?pbNames:null),ts:Date.now()};
+  const payload={action:"addMatch",ta,tb,sa,sb,pa:paNames.length?paNames.join("|"):"",pb:pbNames.length?pbNames.join("|"):"",ts:Date.now()};
 
-  state.matches.push(payload);
+  // Reflejo inmediato local — usa arrays, que es el formato que espera el resto del código
+  state.matches.push({ta,tb,sa,sb,pa:paNames,pb:pbNames,ts:payload.ts});
   document.getElementById("team-a").value="";
   document.getElementById("team-b").value="";
   document.getElementById("score-a").value=0;
